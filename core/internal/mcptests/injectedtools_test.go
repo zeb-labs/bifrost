@@ -35,7 +35,7 @@ func (f *fakeOpenAI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reply := f.replies[0]
 	f.replies = f.replies[1:]
 	f.mu.Unlock()
-	if strings.HasPrefix(reply, "data:") {
+	if strings.HasPrefix(reply, "data:") || strings.HasPrefix(reply, "event:") {
 		w.Header().Set("Content-Type", "text/event-stream")
 	} else {
 		w.Header().Set("Content-Type", "application/json")
@@ -92,10 +92,13 @@ func chatCompletionJSON(content string, finish string, toolCall string) string {
 
 // injectedToolsAccount serves one OpenAI provider pointed at a fake server, with the
 // in-process web_search tool configured as the provider's injected web search.
-type injectedToolsAccount struct{ baseURL string }
+type injectedToolsAccount struct {
+	provider schemas.ModelProvider
+	baseURL  string
+}
 
 func (a *injectedToolsAccount) GetConfiguredProviders() ([]schemas.ModelProvider, error) {
-	return []schemas.ModelProvider{schemas.OpenAI}, nil
+	return []schemas.ModelProvider{a.provider}, nil
 }
 
 func (a *injectedToolsAccount) GetKeysForProvider(ctx context.Context, provider schemas.ModelProvider) ([]schemas.Key, error) {
@@ -116,12 +119,16 @@ func (a *injectedToolsAccount) GetConfigForProvider(provider schemas.ModelProvid
 }
 
 func setupInjectedToolsBifrost(t *testing.T, fake *fakeOpenAI, searches *[]string) *bifrost.Bifrost {
+	return setupInjectedToolsBifrostFor(t, schemas.OpenAI, fake, searches)
+}
+
+func setupInjectedToolsBifrostFor(t *testing.T, provider schemas.ModelProvider, fake *fakeOpenAI, searches *[]string) *bifrost.Bifrost {
 	t.Helper()
 	server := httptest.NewServer(fake)
 	t.Cleanup(server.Close)
 
 	b, err := bifrost.Init(context.Background(), schemas.BifrostConfig{
-		Account: &injectedToolsAccount{baseURL: server.URL},
+		Account: &injectedToolsAccount{provider: provider, baseURL: server.URL},
 		Logger:  bifrost.NewDefaultLogger(schemas.LogLevelError),
 		MCPConfig: &schemas.MCPConfig{
 			// Regular MCP auto-injection stays off: the provider config alone must put
@@ -339,7 +346,7 @@ func setupInjectedToolsBifrostWithHooks(t *testing.T, fake *fakeOpenAI, plugin s
 	server := httptest.NewServer(fake)
 	t.Cleanup(server.Close)
 	b, err := bifrost.Init(context.Background(), schemas.BifrostConfig{
-		Account:    &injectedToolsAccount{baseURL: server.URL},
+		Account:    &injectedToolsAccount{provider: schemas.OpenAI, baseURL: server.URL},
 		Logger:     bifrost.NewDefaultLogger(schemas.LogLevelError),
 		LLMPlugins: []schemas.LLMPlugin{plugin},
 		MCPConfig: &schemas.MCPConfig{
@@ -499,7 +506,7 @@ func TestInjectedWebSearch_ChatStreamLLMSpanEndsAfterLastTurn(t *testing.T) {
 	server := httptest.NewServer(fake)
 	t.Cleanup(server.Close)
 	b, err := bifrost.Init(context.Background(), schemas.BifrostConfig{
-		Account:   &injectedToolsAccount{baseURL: server.URL},
+		Account:   &injectedToolsAccount{provider: schemas.OpenAI, baseURL: server.URL},
 		Logger:    bifrost.NewDefaultLogger(schemas.LogLevelError),
 		Tracer:    tracer,
 		MCPConfig: &schemas.MCPConfig{ToolManagerConfig: &schemas.MCPToolManagerConfig{DisableAutoToolInject: true}},
@@ -675,4 +682,144 @@ func TestInjectedWebSearch_ResponsesStreamRelaxesForcedChoiceAfterSearch(t *test
 	require.Len(t, fake.bodies, 2)
 	assert.Equal(t, "required", fake.bodies[0]["tool_choice"])
 	assert.Equal(t, "auto", fake.bodies[1]["tool_choice"], "after a search the model must be free to answer")
+}
+
+// TestInjectedWebSearch_AnthropicPassthrough covers the path Claude Code takes to
+// Anthropic models: the integration forwards the caller's raw body. With injected
+// tools the attempt must leave passthrough, or the native web_search_20250305 tool
+// would reach Anthropic and the MCP tool would not.
+func TestInjectedWebSearch_AnthropicPassthrough(t *testing.T) {
+	fake := &fakeOpenAI{replies: []string{
+		`{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"tool_use","id":"toolu_1","name":"` + injectedSearchTool + `","input":{"query":"weather in paris"}}],"stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":2}}`,
+		`{"id":"msg_2","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"It is sunny."}],"stop_reason":"end_turn","usage":{"input_tokens":20,"output_tokens":3}}`,
+	}}
+	var searches []string
+	b := setupInjectedToolsBifrostFor(t, schemas.Anthropic, fake, &searches)
+
+	raw := []byte(`{"model":"claude-sonnet-4-5","max_tokens":1024,"messages":[{"role":"user","content":"Weather in Paris?"}],"tools":[{"type":"web_search_20250305","name":"web_search","max_uses":3}]}`)
+	ctx := createTestContext()
+	ctx.SetValue(schemas.BifrostContextKeyIntegrationType, "anthropic")
+	ctx.SetValue(schemas.BifrostContextKeyUseRawRequestBody, true)
+	ctx.SetValue(schemas.BifrostContextKeySendBackRawResponse, true)
+	resp, bifrostErr := b.ResponsesRequest(ctx, &schemas.BifrostResponsesRequest{
+		Provider: schemas.Anthropic,
+		Model:    "claude-sonnet-4-5",
+		Input: []schemas.ResponsesMessage{{
+			Type:    schemas.Ptr(schemas.ResponsesMessageTypeMessage),
+			Role:    schemas.Ptr(schemas.ResponsesInputMessageRoleUser),
+			Content: &schemas.ResponsesMessageContent{ContentStr: schemas.Ptr("Weather in Paris?")},
+		}},
+		Params: &schemas.ResponsesParameters{
+			MaxOutputTokens: schemas.Ptr(1024),
+			Tools:           []schemas.ResponsesTool{{Type: schemas.ResponsesToolTypeWebSearch, Name: schemas.Ptr("web_search")}},
+		},
+		RawRequestBody: raw,
+	})
+
+	require.Nil(t, bifrostErr, "%v", bifrostErr)
+	assert.Equal(t, []string{"weather in paris"}, searches)
+	require.Len(t, fake.bodies, 2)
+	assert.Equal(t, []string{injectedSearchTool}, fake.toolNames(0), "the raw body's native web search never reaches Anthropic")
+	messages, _ := fake.bodies[1]["messages"].([]any)
+	require.Len(t, messages, 3, "user, assistant tool_use, user tool_result")
+	require.NotEmpty(t, resp.Output)
+	for _, item := range resp.Output {
+		assert.NotEqual(t, schemas.ResponsesMessageTypeFunctionCall, *item.Type, "the client never sees the injected call")
+	}
+}
+
+// anthropicSSE renders Anthropic Messages stream events.
+func anthropicSSE(events ...string) string {
+	var b strings.Builder
+	for _, event := range events {
+		typ := gjsonType(event)
+		b.WriteString("event: " + typ + "\ndata: " + event + "\n\n")
+	}
+	return b.String()
+}
+
+func gjsonType(event string) string {
+	var head struct {
+		Type string `json:"type"`
+	}
+	_ = json.Unmarshal([]byte(event), &head)
+	return head.Type
+}
+
+// TestInjectedWebSearch_AnthropicPassthroughStream is the streaming twin of
+// TestInjectedWebSearch_AnthropicPassthrough, the path Claude Code streams through:
+// the attempt leaves raw passthrough, the MCP tool replaces web_search_20250305, the
+// search runs between turns, and the client sees one response with only the answer.
+func TestInjectedWebSearch_AnthropicPassthroughStream(t *testing.T) {
+	fake := &fakeOpenAI{replies: []string{
+		anthropicSSE(
+			`{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":1}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"`+injectedSearchTool+`","input":{}}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"weather in paris\"}"}}`,
+			`{"type":"content_block_stop","index":0}`,
+			`{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}`,
+			`{"type":"message_stop"}`,
+		),
+		anthropicSSE(
+			`{"type":"message_start","message":{"id":"msg_2","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":[],"stop_reason":null,"usage":{"input_tokens":20,"output_tokens":1}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"It is sunny."}}`,
+			`{"type":"content_block_stop","index":0}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}}`,
+			`{"type":"message_stop"}`,
+		),
+	}}
+	var searches []string
+	b := setupInjectedToolsBifrostFor(t, schemas.Anthropic, fake, &searches)
+
+	raw := []byte(`{"model":"claude-sonnet-4-5","max_tokens":1024,"stream":true,"messages":[{"role":"user","content":"Weather in Paris?"}],"tools":[{"type":"web_search_20250305","name":"web_search","max_uses":3}]}`)
+	ctx := createTestContext()
+	ctx.SetValue(schemas.BifrostContextKeyIntegrationType, "anthropic")
+	ctx.SetValue(schemas.BifrostContextKeyUseRawRequestBody, true)
+	ctx.SetValue(schemas.BifrostContextKeySendBackRawResponse, true)
+	stream, bifrostErr := b.ResponsesStreamRequest(ctx, &schemas.BifrostResponsesRequest{
+		Provider: schemas.Anthropic,
+		Model:    "claude-sonnet-4-5",
+		Input: []schemas.ResponsesMessage{{
+			Type:    schemas.Ptr(schemas.ResponsesMessageTypeMessage),
+			Role:    schemas.Ptr(schemas.ResponsesInputMessageRoleUser),
+			Content: &schemas.ResponsesMessageContent{ContentStr: schemas.Ptr("Weather in Paris?")},
+		}},
+		Params: &schemas.ResponsesParameters{
+			MaxOutputTokens: schemas.Ptr(1024),
+			Tools:           []schemas.ResponsesTool{{Type: schemas.ResponsesToolTypeWebSearch, Name: schemas.Ptr("web_search")}},
+		},
+		RawRequestBody: raw,
+	})
+	require.Nil(t, bifrostErr, "%v", bifrostErr)
+
+	var text strings.Builder
+	created, completed := 0, 0
+	for chunk := range stream {
+		require.Nil(t, chunk.BifrostError, "%v", chunk.BifrostError)
+		ev := chunk.BifrostResponsesStreamResponse
+		require.NotNil(t, ev)
+		assert.NotContains(t, string(ev.Type), "function_call", "no injected call event reaches the client")
+		if ev.Item != nil && ev.Item.Type != nil {
+			assert.NotEqual(t, schemas.ResponsesMessageTypeFunctionCall, *ev.Item.Type)
+		}
+		switch ev.Type {
+		case schemas.ResponsesStreamResponseTypeCreated:
+			created++
+		case schemas.ResponsesStreamResponseTypeCompleted:
+			completed++
+		case schemas.ResponsesStreamResponseTypeOutputTextDelta:
+			if ev.Delta != nil {
+				text.WriteString(*ev.Delta)
+			}
+		}
+	}
+
+	assert.Equal(t, []string{"weather in paris"}, searches)
+	assert.Equal(t, "It is sunny.", text.String())
+	assert.Equal(t, 1, created)
+	assert.Equal(t, 1, completed)
+	require.Len(t, fake.bodies, 2)
+	assert.Equal(t, []string{injectedSearchTool}, fake.toolNames(0), "the raw body's native web search never reaches Anthropic")
+	assert.Equal(t, false, ctx.Value(schemas.BifrostContextKeyUseRawRequestBody), "the response converter sees passthrough switched off")
 }
