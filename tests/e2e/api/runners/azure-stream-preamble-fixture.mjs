@@ -53,6 +53,10 @@ const routes = {
 	"/v1/responses": { responses: true, openai: true },
 };
 
+// preamble-retry fails every odd call per route with a retryable in-stream rate
+// limit after its startup events, and serves the retry that follows.
+const retryCalls = new Map();
+
 const server = http.createServer(async (req, res) => {
 	const path = new URL(req.url, "http://localhost").pathname;
 	const route = routes[path];
@@ -66,14 +70,20 @@ const server = http.createServer(async (req, res) => {
 		let body = "";
 		for await (const chunk of req) body += chunk;
 		const { model } = JSON.parse(body);
-		if (model !== "preamble-error" && model !== "preamble-success") {
+		if (model !== "preamble-error" && model !== "preamble-success" && model !== "preamble-retry") {
 			res.writeHead(400).end("unknown fixture model");
 			return;
 		}
-		const failed = model === "preamble-error";
-		const failure = responses
+		let failed = model === "preamble-error";
+		let failure = responses
 			? (openai ? openaiResponsesFailure : responsesFailure)
 			: (openai ? openaiChatFailure : chatFailure);
+		if (model === "preamble-retry") {
+			const calls = (retryCalls.get(path) || 0) + 1;
+			retryCalls.set(path, calls);
+			failed = calls % 2 === 1;
+			failure = responses ? responsesFailure : chatFailure;
+		}
 		const events = failed ? failure : (responses ? responsesSuccess : chatSuccess);
 		res.writeHead(200, { "Content-Type": "text/event-stream" });
 		res.flushHeaders();
