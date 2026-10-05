@@ -5093,3 +5093,30 @@ func TestUpsertModelPricesBatch_PriorityAbove272kCacheCreation_SurvivesResync(t 
 	require.NotNil(t, got[0].CacheCreationInputTokenCostAbove272kTokensPriority)
 	assert.InDelta(t, 0.00006, *got[0].CacheCreationInputTokenCostAbove272kTokensPriority, 1e-12)
 }
+
+// TestProviderInjectedToolsRoundTrip pins injected_tools through every provider write
+// path (bulk upsert, add, update) and both read paths, including clearing it.
+func TestProviderInjectedToolsRoundTrip(t *testing.T) {
+	store := setupRDBTestStore(t)
+	ctx := context.Background()
+	webSearch := &schemas.InjectedToolsConfig{
+		WebSearch: &schemas.InjectedToolRef{MCPClientName: "tavily", ToolName: "search"},
+	}
+
+	require.NoError(t, store.UpdateProvidersConfig(ctx, map[schemas.ModelProvider]ProviderConfig{
+		schemas.OpenAI: {InjectedTools: webSearch},
+	}))
+	all, err := store.GetProvidersConfig(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, webSearch, all[schemas.OpenAI].InjectedTools)
+
+	require.NoError(t, store.AddProvider(ctx, schemas.Anthropic, ProviderConfig{InjectedTools: webSearch}))
+	got, err := store.GetProviderConfig(ctx, schemas.Anthropic)
+	require.NoError(t, err)
+	assert.Equal(t, webSearch, got.InjectedTools)
+
+	require.NoError(t, store.UpdateProvider(ctx, schemas.Anthropic, ProviderConfig{}))
+	got, err = store.GetProviderConfig(ctx, schemas.Anthropic)
+	require.NoError(t, err)
+	assert.Nil(t, got.InjectedTools, "updating with a nil block must clear the stored column")
+}

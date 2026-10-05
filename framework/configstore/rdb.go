@@ -750,6 +750,7 @@ func (s *RDBConfigStore) UpdateProvidersConfig(ctx context.Context, providers ma
 			CustomProviderConfig:     providerConfig.CustomProviderConfig,
 			OpenAIConfig:             providerConfig.OpenAIConfig,
 			PromptCache:              providerConfig.PromptCache,
+			InjectedTools:            providerConfig.InjectedTools,
 			ConfigHash:               providerConfig.ConfigHash,
 			Status:                   providerConfig.Status,
 			Description:              providerConfig.Description,
@@ -1033,6 +1034,7 @@ func (s *RDBConfigStore) UpdateProvider(ctx context.Context, provider schemas.Mo
 	dbProvider.CustomProviderConfig = configCopy.CustomProviderConfig
 	dbProvider.OpenAIConfig = configCopy.OpenAIConfig
 	dbProvider.PromptCache = configCopy.PromptCache
+	dbProvider.InjectedTools = configCopy.InjectedTools
 	dbProvider.ConfigHash = configCopy.ConfigHash
 
 	// Save the updated provider
@@ -1228,6 +1230,7 @@ func (s *RDBConfigStore) AddProvider(ctx context.Context, provider schemas.Model
 		CustomProviderConfig:     configCopy.CustomProviderConfig,
 		OpenAIConfig:             configCopy.OpenAIConfig,
 		PromptCache:              configCopy.PromptCache,
+		InjectedTools:            configCopy.InjectedTools,
 		ConfigHash:               configCopy.ConfigHash,
 	}
 	// Create the provider
@@ -1408,6 +1411,7 @@ func (s *RDBConfigStore) GetProvidersConfig(ctx context.Context) (map[schemas.Mo
 			CustomProviderConfig:     dbProvider.CustomProviderConfig,
 			OpenAIConfig:             dbProvider.OpenAIConfig,
 			PromptCache:              dbProvider.PromptCache,
+			InjectedTools:            dbProvider.InjectedTools,
 			ConfigHash:               dbProvider.ConfigHash,
 			Status:                   dbProvider.Status,
 			Description:              dbProvider.Description,
@@ -1442,6 +1446,7 @@ func (s *RDBConfigStore) GetProviderConfig(ctx context.Context, provider schemas
 		CustomProviderConfig:     dbProvider.CustomProviderConfig,
 		OpenAIConfig:             dbProvider.OpenAIConfig,
 		PromptCache:              dbProvider.PromptCache,
+		InjectedTools:            dbProvider.InjectedTools,
 		ConfigHash:               dbProvider.ConfigHash,
 		Status:                   dbProvider.Status,
 		Description:              dbProvider.Description,
