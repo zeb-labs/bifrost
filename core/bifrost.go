@@ -7873,6 +7873,9 @@ func (bifrost *Bifrost) requestWorker(provider schemas.Provider, config *schemas
 				applyRawCaptureSignals(req.Context, config)
 				applyProviderProxySignal(req.Context, config)
 				attemptRoutingInfo = schemas.BuildRoutingInfo(req.Context, provider.GetProviderKey(), originalModelRequested, k)
+				if set := bifrost.injectedToolsForAttempt(req.Context, config, req.RequestType); set != nil {
+					return bifrost.runInjectedTools(provider, config, req, k, set)
+				}
 				return bifrost.handleProviderRequest(provider, config, req, k, keys)
 			}, keyProvider, req.RequestType, provider.GetProviderKey(), model, &req.BifrostRequest, bifrost.logger)
 		}
