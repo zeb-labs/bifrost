@@ -8,6 +8,7 @@ import {
 	ApiStructureFormFragment,
 	BetaHeadersFormFragment,
 	GovernanceFormFragment,
+	InjectedToolsFormFragment,
 	OpenAIConfigFormFragment,
 	ProxyFormFragment,
 } from "../fragments";
@@ -59,6 +60,10 @@ const availableTabs = (hasCustomProviderConfig: boolean, hasGovernanceAccess: bo
 	tabs.push({
 		id: "prompt-cache",
 		label: "Prompt Caching",
+	});
+	tabs.push({
+		id: "web-search",
+		label: "Web Search",
 	});
 	tabs.push({
 		id: "debugging",
@@ -154,6 +159,9 @@ export default function ProviderConfigSheet({ show, onCancel, provider }: Props)
 							</TabsContent>
 							<TabsContent value="prompt-cache">
 								<PromptCacheFormFragment provider={provider} />
+							</TabsContent>
+							<TabsContent value="web-search">
+								<InjectedToolsFormFragment provider={provider} />
 							</TabsContent>
 							<TabsContent value="debugging">
 								<DebuggingFormFragment provider={provider} />
