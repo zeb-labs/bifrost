@@ -6202,6 +6202,37 @@
       },
       "additionalProperties": false
     },
+    "injected_tools": {
+      "type": "object",
+      "description": "MCP tools Bifrost injects into every chat and responses request served by this provider and executes server side when the model calls them. The client never sees the injected tool call, only the final answer.",
+      "properties": {
+        "web_search": {
+          "$ref": "#/$defs/injected_tool_ref",
+          "description": "MCP tool used as this provider's web search. Replaces any native web search tool or web_search_options the client sends."
+        }
+      },
+      "additionalProperties": false
+    },
+    "injected_tool_ref": {
+      "type": "object",
+      "properties": {
+        "mcp_client_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the configured MCP client that provides the tool"
+        },
+        "tool_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Tool name as the MCP server exposes it, without the client prefix"
+        }
+      },
+      "required": [
+        "mcp_client_name",
+        "tool_name"
+      ],
+      "additionalProperties": false
+    },
     "concurrency_and_buffer_size": {
       "type": "object",
       "properties": {
@@ -7020,6 +7051,9 @@
           "type": "boolean",
           "description": "Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)"
         },
+        "injected_tools": {
+          "$ref": "#/$defs/injected_tools"
+        },
         "custom_provider_config": {
           "$ref": "#/$defs/custom_provider_config"
         }
@@ -7060,6 +7094,9 @@
         "store_raw_request_response": {
           "type": "boolean",
           "description": "Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)"
+        },
+        "injected_tools": {
+          "$ref": "#/$defs/injected_tools"
         },
         "custom_provider_config": {
           "$ref": "#/$defs/custom_provider_config"
@@ -7102,6 +7139,9 @@
           "type": "boolean",
           "description": "Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)"
         },
+        "injected_tools": {
+          "$ref": "#/$defs/injected_tools"
+        },
         "custom_provider_config": {
           "$ref": "#/$defs/custom_provider_config"
         }
@@ -7142,6 +7182,9 @@
         "store_raw_request_response": {
           "type": "boolean",
           "description": "Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)"
+        },
+        "injected_tools": {
+          "$ref": "#/$defs/injected_tools"
         },
         "custom_provider_config": {
           "$ref": "#/$defs/custom_provider_config"
@@ -7184,6 +7227,9 @@
           "type": "boolean",
           "description": "Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)"
         },
+        "injected_tools": {
+          "$ref": "#/$defs/injected_tools"
+        },
         "custom_provider_config": {
           "$ref": "#/$defs/custom_provider_config"
         }
@@ -7224,6 +7270,9 @@
         "store_raw_request_response": {
           "type": "boolean",
           "description": "Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)"
+        },
+        "injected_tools": {
+          "$ref": "#/$defs/injected_tools"
         },
         "custom_provider_config": {
           "$ref": "#/$defs/custom_provider_config"
@@ -7266,6 +7315,9 @@
           "type": "boolean",
           "description": "Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)"
         },
+        "injected_tools": {
+          "$ref": "#/$defs/injected_tools"
+        },
         "custom_provider_config": {
           "$ref": "#/$defs/custom_provider_config"
         }
@@ -7306,6 +7358,9 @@
         "store_raw_request_response": {
           "type": "boolean",
           "description": "Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)"
+        },
+        "injected_tools": {
+          "$ref": "#/$defs/injected_tools"
         },
         "custom_provider_config": {
           "$ref": "#/$defs/custom_provider_config"
@@ -7348,6 +7403,9 @@
           "type": "boolean",
           "description": "Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)"
         },
+        "injected_tools": {
+          "$ref": "#/$defs/injected_tools"
+        },
         "custom_provider_config": {
           "$ref": "#/$defs/custom_provider_config"
         }
@@ -7389,6 +7447,9 @@
           "type": "boolean",
           "description": "Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)"
         },
+        "injected_tools": {
+          "$ref": "#/$defs/injected_tools"
+        },
         "custom_provider_config": {
           "$ref": "#/$defs/custom_provider_config"
         }
@@ -7427,6 +7488,9 @@
           "type": "boolean",
           "description": "Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)"
         },
+        "injected_tools": {
+          "$ref": "#/$defs/injected_tools"
+        },
         "custom_provider_config": {
           "$ref": "#/$defs/custom_provider_config"
         }
@@ -7464,6 +7528,9 @@
         "store_raw_request_response": {
           "type": "boolean",
           "description": "Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)"
+        },
+        "injected_tools": {
+          "$ref": "#/$defs/injected_tools"
         },
         "custom_provider_config": {
           "$ref": "#/$defs/custom_provider_config"
@@ -7505,6 +7572,9 @@
         "store_raw_request_response": {
           "type": "boolean",
           "description": "Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)"
+        },
+        "injected_tools": {
+          "$ref": "#/$defs/injected_tools"
         },
         "custom_provider_config": {
           "$ref": "#/$defs/custom_provider_config"
