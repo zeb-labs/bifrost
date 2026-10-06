@@ -1185,21 +1185,14 @@ The **Recalculate costs** action in LLM Logs also honors this setting, so you ca
 
 <Tab title="Using API">
 
+`PUT /api/providers/{provider}` replaces the provider's network and concurrency settings with what you send, so read the current config, set the flag, and send it back.
+
 ```bash
-curl --location 'http://localhost:8080/api/providers' \
---header 'Content-Type: application/json' \
---data '{
-    "provider": "openai",
-    "keys": [
-        {
-            "name": "openai-key-1",
-            "value": "env.OPENAI_API_KEY",
-            "models": ["*"],
-            "weight": 1.0
-        }
-    ],
-    "ignore_provider_cost": true
-}'
+curl -s 'http://localhost:8080/api/providers/openai' \
+  | jq 'del(.name, .keys, .provider_status, .status, .description, .config_hash) | .ignore_provider_cost = true' \
+  | curl --location --request PUT 'http://localhost:8080/api/providers/openai' \
+      --header 'Content-Type: application/json' \
+      --data @-
 ```
 
 </Tab>
