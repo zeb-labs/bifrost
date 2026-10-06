@@ -2599,7 +2599,7 @@ export function LogDetailView({
 												value={
 													<Badge variant="secondary" className="uppercase">
 														{call.request_type === "decisions"
-															? "Jev Classification"
+															? "Decision Model Classification"
 															: call.output_tokens != null
 																? "LLM Classification"
 																: "Embedding"}
