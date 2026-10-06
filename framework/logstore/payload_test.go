@@ -49,6 +49,7 @@ func TestExtractPayload_RoundTrip(t *testing.T) {
 		PassthroughResponseBody: `body-resp`,
 		RoutingEngineLogs:       `routing log`,
 		Metadata:                &metadata,
+		PluginLogs:              `{"guardrails":[{"message":"pii detected"}]}`,
 	}
 
 	payload := ExtractPayload(log)
@@ -61,6 +62,7 @@ func TestExtractPayload_RoundTrip(t *testing.T) {
 	assert.Equal(t, `{"judge_calls":[{"total_tokens":18}]}`, payload["guardrail_debug"])
 	assert.Equal(t, `routing log`, payload["routing_engine_logs"])
 	assert.Equal(t, metadata, payload["metadata"], "metadata must be written to the snapshot for object consumers")
+	assert.Equal(t, `{"guardrails":[{"message":"pii detected"}]}`, payload["plugin_logs"])
 
 	// Clear and verify.
 	ClearPayload(log)
@@ -73,6 +75,7 @@ func TestExtractPayload_RoundTrip(t *testing.T) {
 	assert.Empty(t, log.RoutingEngineLogs)
 	require.NotNil(t, log.Metadata)
 	assert.Equal(t, metadata, *log.Metadata)
+	assert.Empty(t, log.PluginLogs)
 
 	// Marshal and merge back.
 	data, err := MarshalPayload(payload)
@@ -92,6 +95,7 @@ func TestExtractPayload_RoundTrip(t *testing.T) {
 	assert.Equal(t, `[{"content":[{"type":"text","text":"embed me"}]}]`, log.EmbeddingInput)
 	assert.Equal(t, `{"judge_calls":[{"total_tokens":18}]}`, log.GuardrailDebug)
 	assert.Equal(t, `routing log`, log.RoutingEngineLogs)
+	assert.Equal(t, `{"guardrails":[{"message":"pii detected"}]}`, log.PluginLogs)
 	require.NotNil(t, log.Metadata)
 	assert.Equal(t, dbMetadata, *log.Metadata, "merge must not override DB-authoritative metadata with the snapshot")
 	assert.Equal(t, "user-456", log.MetadataParsed["cortex-user-id"])
@@ -322,4 +326,11 @@ func TestPayloadFieldNames(t *testing.T) {
 
 func strPtr(s string) *string {
 	return &s
+}
+
+// TestIsPayloadEmpty_PluginLogsOnly verifies a log whose only payload content is
+// plugin logs still uploads, so object-store consumers receive its plugin logs.
+func TestIsPayloadEmpty_PluginLogsOnly(t *testing.T) {
+	assert.True(t, isPayloadEmpty(ExtractPayload(&Log{ID: "empty"})))
+	assert.False(t, isPayloadEmpty(ExtractPayload(&Log{ID: "plugin-only", PluginLogs: `{"guardrails":[{"message":"pii detected"}]}`})))
 }
